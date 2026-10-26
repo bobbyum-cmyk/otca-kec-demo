@@ -459,7 +459,90 @@ function completeStep(id, advance) {
   if (next) goLive(next.id);
 }
 
+const GATE_KEY = "otca-kec-gate";
+const GATE_HASH = "80046182f07eb8eaa888af9adfcaa7967ceb3e8c28414e3d1edf996ae8141112";
+
+function sha256(ascii) {
+  function rightRotate(value, amount) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const maxWord = 2 ** 32;
+  let result = "";
+  const words = [];
+  const bitLength = ascii.length * 8;
+  const hash = [];
+  const k = [];
+  const isComposite = {};
+  for (let candidate = 2, primeCounter = 0; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (let i = 0; i < 313; i += candidate) isComposite[i] = candidate;
+      hash[primeCounter] = (candidate ** 0.5 * maxWord) | 0;
+      k[primeCounter++] = (candidate ** (1 / 3) * maxWord) | 0;
+    }
+  }
+  ascii += "\x80";
+  while ((ascii.length % 64) - 56) ascii += "\x00";
+  for (let i = 0; i < ascii.length; i++) words[i >> 2] |= ascii.charCodeAt(i) << ((3 - i) % 4) * 8;
+  words[words.length] = (bitLength / maxWord) | 0;
+  words[words.length] = bitLength;
+  for (let j = 0; j < words.length;) {
+    const w = words.slice(j, j += 16);
+    const oldHash = hash.slice(0);
+    for (let i = 0; i < 64; i++) {
+      const w15 = w[i - 15];
+      const w2 = w[i - 2];
+      const a = hash[0];
+      const e = hash[4];
+      const temp1 = (hash[7]
+        + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
+        + ((e & hash[5]) ^ ((~e) & hash[6]))
+        + k[i]
+        + (w[i] = (i < 16) ? w[i] : (
+          w[i - 16]
+          + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
+          + w[i - 7]
+          + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+        ) | 0)) | 0;
+      const temp2 = ((rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
+        + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]))) | 0;
+      hash.unshift((temp1 + temp2) | 0);
+      hash[4] = (hash[4] + temp1) | 0;
+      hash.pop();
+    }
+    for (let i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
+  }
+  for (let i = 0; i < 8; i++) {
+    for (let n = 3; n >= 0; n--) {
+      const b = (hash[i] >> (n * 8)) & 255;
+      result += (b < 16 ? "0" : "") + b.toString(16);
+    }
+  }
+  return result;
+}
+
+function deskUnlocked() {
+  return sessionStorage.getItem(GATE_KEY) === "1";
+}
+
+function showGate(message) {
+  app.innerHTML = `
+    <form class="gate" data-form="gate">
+      <div class="mark" aria-hidden="true"></div>
+      <h1>OTCA · KEC</h1>
+      <p>Enter the team password to open the demonstration desk.</p>
+      <input name="password" type="password" autocomplete="current-password" placeholder="Password" autofocus required>
+      ${message ? `<p class="gate-error">${esc(message)}</p>` : ""}
+      <button class="btn primary" type="submit">Open</button>
+    </form>`;
+  const field = app.querySelector("input");
+  if (field) field.focus();
+}
+
 function render() {
+  if (!deskUnlocked()) {
+    showGate("");
+    return;
+  }
   const main = document.querySelector(".main");
   const scroll = main ? main.scrollTop : 0;
   const hash = state.presenter ? "present" : state.view;
@@ -1276,6 +1359,16 @@ app.addEventListener("submit", (event) => {
   const form = event.target.closest("form");
   if (!form) return;
   event.preventDefault();
+  if (form.dataset.form === "gate") {
+    const password = String(new FormData(form).get("password") || "");
+    if (sha256(password) !== GATE_HASH) {
+      showGate("That password is not right.");
+      return;
+    }
+    sessionStorage.setItem(GATE_KEY, "1");
+    render();
+    return;
+  }
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.dataset.form === "issue") {
     mutate(() => {

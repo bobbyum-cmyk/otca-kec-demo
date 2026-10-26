@@ -249,6 +249,21 @@ h1, h2, h3, p { margin: 0; }
 .btn.small { padding: 4px 8px; font-size: 13px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 
+.gate {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+.gate h1 { font-family: var(--cond); letter-spacing: 0.04em; }
+.gate p { color: var(--muted); max-width: 360px; }
+.gate input { width: min(320px, 100%); text-align: center; }
+.gate-error { color: var(--coral); }
+
 .fleet { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .robot {
   text-align: left;
