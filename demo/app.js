@@ -48,6 +48,10 @@ function load() {
       if (!saved.cleaningRun) ensureCleaningRun(saved);
       linkDevicesToFleet(saved);
       if (saved.roster !== 1) applyRoster(saved);
+      saved.checks = window.OTCA_SEED.checks.map((item) => {
+        const old = (saved.checks || []).find((check) => check.id === item.id);
+        return old ? { ...item, done: !!old.done } : structuredClone(item);
+      });
       return saved;
     }
     if (saved.version === 3) return migrateTasks(saved);
@@ -766,8 +770,7 @@ function fleet() {
             </span>
           </div>
           <p class="role">${esc(robot.role)}</p>
-          <div class="meter" title="Charge ${robot.battery}%"><span style="width:${Math.max(0, Math.min(100, robot.battery))}%;background:${robotColor(robot)}"></span></div>
-          <div class="now">${robot.battery}% · ${esc(robot.now)}</div>
+          <div class="now">${esc(robot.now)}</div>
         </button>`;
       }).join("")}
     </div>`;
@@ -794,9 +797,6 @@ function fleetDetail(id) {
           <select data-robot="${robot.id}" data-robot-field="status">
             ${STATUSES.map((status) => `<option ${status === robot.status ? "selected" : ""}>${status}</option>`).join("")}
           </select>
-        </label>
-        <label class="field"><span>Charge %</span>
-          <input data-robot="${robot.id}" data-robot-field="battery" type="number" min="0" max="100" value="${esc(robot.battery)}">
         </label>
       </div>
     </div>
@@ -1335,7 +1335,7 @@ app.addEventListener("change", (event) => {
     mutate(() => {
       const robot = robotById(target.dataset.robot);
       const field = target.dataset.robotField;
-      robot[field] = field === "battery" ? Number(target.value) : target.value;
+      robot[field] = target.value;
     });
   } else if (target.matches("[data-count]")) {
     mutate(() => {

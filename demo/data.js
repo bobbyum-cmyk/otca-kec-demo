@@ -60,7 +60,7 @@ window.OTCA_SEED = {
     { id: "c1", label: "Points A, B, C, and D are on the map, in that order, and the route is wider than 85 cm straight and 130 cm to turn", done: false },
     { id: "c2", label: "Audience barrier and the drone stock-take flight box are marked", done: false },
     { id: "c3", label: "AMR map is applied and the laser overlay matches the route", done: false },
-    { id: "c4", label: "Both AMRs are above the task charge level", done: false },
+    { id: "c4", label: "Battery check: both AMRs are above the task charge, the dog pack is fitted, the drone pack can finish one stock-take circuit, and the cleaning robot is charged for its pass", done: false },
     { id: "c5", label: "Thermal sample, voice-print device, and unloaded misaligned rack are in place", done: false },
     { id: "c6", label: "Cable route and rack row are clear for the dog", done: false },
     { id: "c7", label: "Drone nest is the map origin and the stock-take locations are loaded", done: false },
