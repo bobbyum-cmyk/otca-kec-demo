@@ -592,10 +592,6 @@ function shell() {
             </button>`).join("")}
           <div class="nav-foot">
             <p>Figures follow the AMR, LYNX M20, and Jiaxinlian manuals in this project. Warehouse results will differ.</p>
-            ${state.confirmReset
-              ? `<button type="button" class="btn warn" data-action="reset-yes">Erase local changes</button>
-                 <button type="button" class="btn ghost" data-action="reset-no">Keep them</button>`
-              : `<button type="button" class="btn ghost" data-action="reset-ask">Reset this desk</button>`}
           </div>
         </nav>
         <main class="main">${view()}</main>
@@ -1273,13 +1269,7 @@ app.addEventListener("click", (event) => {
       if (state.drawer === id) state.drawer = null;
     }
   });
-  else if (action === "reset-ask") mutate(() => { state.confirmReset = true; });
-  else if (action === "reset-no") mutate(() => { state.confirmReset = false; });
-  else if (action === "reset-yes") {
-    localStorage.removeItem(KEY);
-    state = fresh();
-    render();
-  } else if (action === "print") window.print();
+  else if (action === "print") window.print();
 });
 
 app.addEventListener("change", (event) => {
