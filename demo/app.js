@@ -23,11 +23,13 @@ const OWNER_IDS = { "Site lead": "site", "AMR operator": "amr", "Dog handler": "
 const ROLE_TO_PERSON = { site: "wilson", host: "chi-wai", amr: "erk", dog: "pong", drone: "fu-pan" };
 
 const app = document.querySelector("#app");
+let hadLocal = false;
 let state = load();
 
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
+    hadLocal = !!raw;
     if (!raw) return fresh();
     const saved = JSON.parse(raw);
     if (!saved || !Array.isArray(saved.robots)) return fresh();
@@ -145,9 +147,181 @@ function fresh() {
   return next;
 }
 
-function save() {
+function writeLocal() {
   const copy = { ...state, presenter: false, confirmReset: false, revealId: null };
   localStorage.setItem(KEY, JSON.stringify(copy));
+}
+
+function save() {
+  state.sharedAt = Date.now();
+  dirtyUntil = Date.now() + 2000;
+  writeLocal();
+  schedulePublish();
+}
+
+const SHARE_URL = "https://ntfy.sh/otca-kec-7f3a9c2e8b14d6a0c5e1b8d4";
+let shareLabel = "Sharing with the team…";
+let shareStarted = false;
+let publishTimer = 0;
+let dirtyUntil = 0;
+let lastPublishAt = 0;
+let syncing = false;
+
+function snapshot() {
+  return {
+    sharedAt: state.sharedAt || 0,
+    demoDate: state.demoDate,
+    startTime: state.startTime,
+    audience: state.audience,
+    scriptFilter: state.scriptFilter,
+    assignees: state.assignees,
+    devices: state.devices,
+    tasks: state.tasks,
+    checks: state.checks,
+    issues: state.issues,
+    counts: state.counts,
+    steps: state.steps,
+    log: state.log,
+    liveStepId: state.liveStepId,
+    robots: (state.robots || []).map((robot) => ({ id: robot.id, status: robot.status, now: robot.now })),
+  };
+}
+
+function paintShare() {
+  const node = document.querySelector("[data-share]");
+  if (node) node.textContent = shareLabel;
+}
+
+function schedulePublish() {
+  clearTimeout(publishTimer);
+  publishTimer = setTimeout(() => {
+    publish().catch(() => {
+      shareLabel = "Could not share. This browser still has your copy.";
+      paintShare();
+    });
+  }, 700);
+}
+
+async function publish() {
+  lastPublishAt = Date.now();
+  shareLabel = "Sharing…";
+  paintShare();
+  const response = await fetch(SHARE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshot()),
+  });
+  if (!response.ok) throw new Error("share");
+  shareLabel = "Saved for the team";
+  paintShare();
+}
+
+async function pullLatest() {
+  const response = await fetch(`${SHARE_URL}/json?poll=1&since=6h`, { cache: "no-store" });
+  if (!response.ok) return null;
+  const text = await response.text();
+  const events = text.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    try { return JSON.parse(line); } catch (err) { return null; }
+  }).filter(Boolean);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.event !== "message") continue;
+    if (event.attachment && event.attachment.url) {
+      const file = await fetch(event.attachment.url, { cache: "no-store" });
+      if (!file.ok) continue;
+      const data = await file.json();
+      if (data && data.sharedAt) return data;
+    }
+    if (typeof event.message === "string" && event.message.startsWith("{")) {
+      try {
+        const data = JSON.parse(event.message);
+        if (data && data.sharedAt) return data;
+      } catch (err) { /* the notice is not a desk snapshot */ }
+    }
+  }
+  return null;
+}
+
+function applyRemote(snap) {
+  const keep = {
+    view: state.view,
+    presenter: state.presenter,
+    drawer: state.drawer,
+    confirmReset: false,
+    revealId: null,
+    ownerFilter: state.ownerFilter,
+    phaseFilter: state.phaseFilter,
+  };
+  state.demoDate = snap.demoDate || state.demoDate;
+  state.startTime = snap.startTime || state.startTime;
+  state.audience = snap.audience || state.audience;
+  state.scriptFilter = snap.scriptFilter || state.scriptFilter;
+  if (Array.isArray(snap.assignees)) state.assignees = snap.assignees;
+  if (Array.isArray(snap.devices)) state.devices = snap.devices;
+  if (Array.isArray(snap.tasks)) state.tasks = snap.tasks;
+  if (Array.isArray(snap.checks)) state.checks = snap.checks;
+  if (Array.isArray(snap.issues)) state.issues = snap.issues;
+  if (Array.isArray(snap.counts)) state.counts = snap.counts;
+  if (Array.isArray(snap.steps)) state.steps = snap.steps;
+  if (Array.isArray(snap.log)) state.log = snap.log;
+  state.liveStepId = snap.liveStepId || null;
+  state.sharedAt = snap.sharedAt || 0;
+  Object.assign(state, keep);
+  linkDevicesToFleet(state);
+  (snap.robots || []).forEach((incoming) => {
+    const robot = state.robots.find((item) => item.id === incoming.id);
+    if (!robot) return;
+    if (incoming.status) robot.status = incoming.status;
+    if (typeof incoming.now === "string") robot.now = incoming.now;
+  });
+  writeLocal();
+  shareLabel = "Saved for the team";
+  render();
+}
+
+async function syncFromTeam() {
+  if (syncing || !deskUnlocked()) return;
+  syncing = true;
+  try {
+    const remote = await pullLatest();
+    const localStamp = state.sharedAt || 0;
+    const remoteStamp = (remote && remote.sharedAt) || 0;
+    if (remote && remoteStamp > localStamp && Date.now() >= dirtyUntil) {
+      const typing = document.activeElement && document.activeElement.matches && document.activeElement.matches("input, textarea, select");
+      if (!typing) applyRemote(remote);
+      return;
+    }
+    if (hadLocal && !localStamp) {
+      state.sharedAt = Date.now();
+      writeLocal();
+      await publish();
+      return;
+    }
+    if (localStamp > remoteStamp && Date.now() - lastPublishAt > 20000) {
+      await publish();
+      return;
+    }
+    shareLabel = remote || localStamp ? "Saved for the team" : shareLabel;
+    paintShare();
+  } catch (err) {
+    shareLabel = "Could not share. This browser still has your copy.";
+    paintShare();
+  } finally {
+    syncing = false;
+  }
+}
+
+function startShare() {
+  syncFromTeam();
+  setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    syncFromTeam();
+  }, 12000);
+  setInterval(() => {
+    if (document.visibilityState === "hidden" || !state.sharedAt) return;
+    publish().catch(() => {});
+  }, 15 * 60 * 1000);
+  window.addEventListener("focus", () => { syncFromTeam(); });
 }
 
 function esc(value) {
@@ -560,6 +734,11 @@ function render() {
     }
     state.revealId = null;
   } else if (next) next.scrollTop = scroll;
+  paintShare();
+  if (!shareStarted) {
+    shareStarted = true;
+    startShare();
+  }
 }
 
 function shell() {
@@ -596,6 +775,7 @@ function shell() {
             </button>`).join("")}
           <div class="nav-foot">
             <p>Figures follow the AMR, LYNX M20, and Jiaxinlian manuals in this project. Warehouse results will differ.</p>
+            <p data-share>${esc(shareLabel)}</p>
           </div>
         </nav>
         <main class="main">${view()}</main>
